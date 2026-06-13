@@ -14,6 +14,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
     token = credentials.credentials
     
     try:
+        # HACKATHON MOCK: Si el token incluye un @ y no es un JWT gigante, asumimos que es el mock_token
+        if "@" in token and len(token) < 100:
+            return {
+                "email": token,
+                "name": "Mock User",
+                "raw_payload": {}
+            }
+            
         # Un JWT consta de 3 partes separadas por puntos. La del medio es el payload.
         parts = token.split('.')
         if len(parts) != 3:

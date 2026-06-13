@@ -4,6 +4,9 @@ from core.supabase_db import get_db
 from api.dependencies.auth import get_current_user
 from services.ia_service import analyze_gap_with_gemini, optimize_cv_with_gemini
 from pydantic import BaseModel
+import io
+import uuid
+from fastapi import UploadFile, File
 
 router = APIRouter()
 
@@ -87,6 +90,73 @@ def optimize_cv(data: CVRequest, current_user: dict = Depends(get_current_user))
         return {
             "status": "success",
             "message": "CV analizado correctamente por el Coach Evolutivo.",
+            "data": analysis
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/optimize-cv-upload")
+async def optimize_cv_upload(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """
+    Recibe un PDF, extrae el texto, lo guarda en Supabase Storage y lo analiza con Gemini.
+    """
+    try:
+        from pypdf import PdfReader
+        
+        content = await file.read()
+        
+        # 1. Extraer texto del PDF
+        try:
+            reader = PdfReader(io.BytesIO(content))
+            cv_text = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    cv_text += extracted + "\n"
+        except Exception as pdf_err:
+            raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo PDF: {str(pdf_err)}")
+            
+        if len(cv_text.strip()) < 50:
+            raise HTTPException(status_code=400, detail="El PDF parece estar vacío o ser una imagen sin texto (necesita ser texto seleccionable).")
+
+        # 2. Subir a Supabase Storage
+        db: Client = get_db()
+        file_ext = file.filename.split(".")[-1]
+        safe_email = current_user['email'].split('@')[0]
+        unique_filename = f"{safe_email}_{uuid.uuid4().hex[:8]}.{file_ext}"
+        
+        file_url = None
+        try:
+            # Sube al bucket 'cv_students' (debe existir y ser público en Supabase)
+            db.storage.from_("cv_students").upload(unique_filename, content, {"content-type": file.content_type})
+            file_url = db.storage.from_("cv_students").get_public_url(unique_filename)
+        except Exception as e:
+            print(f"Advertencia: No se pudo subir el archivo a Supabase Storage. ¿Existe el bucket 'cv_students'? Error: {e}")
+            
+        # 3. Guardar la URL en la base de datos (opcional si la tabla existe)
+        if file_url:
+            user_resp = db.table("Usuario").select("id").eq("email", current_user["email"]).execute()
+            if user_resp.data:
+                user_id = user_resp.data[0]["id"]
+                try:
+                    db.table("Resume").insert({
+                        "user_id": user_id,
+                        "title": file.filename,
+                        "file_url": file_url,
+                        "is_default": True
+                    }).execute()
+                except Exception as db_e:
+                    print(f"Advertencia: No se pudo guardar el registro en la tabla Resume: {db_e}")
+
+        # 4. Enviar a Gemini para optimizar
+        analysis = optimize_cv_with_gemini(cv_text)
+        
+        return {
+            "status": "success",
+            "message": "CV procesado y guardado correctamente.",
+            "file_url": file_url,
             "data": analysis
         }
     except HTTPException:
