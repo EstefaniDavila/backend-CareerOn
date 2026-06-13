@@ -4,6 +4,7 @@ from api.routes import auth
 from api.routes import onboarding
 from api.routes import recruiter
 from api.routes import ai_coach
+from api.routes import skill
 
 app = FastAPI(
     title="CarrerOn API",
@@ -25,7 +26,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Autenticación"])
 app.include_router(onboarding.router, prefix="/api/onboarding", tags=["Onboarding"])
 app.include_router(recruiter.router, prefix="/api/recruiter", tags=["Reclutador"])
 app.include_router(ai_coach.router, prefix="/api/ai", tags=["Coach IA"])
-
+app.include_router(skill.router, prefix="/api/skill", tags=["Habilidades"])
 @app.get("/")
 def read_root():
     return {"message": "¡Bienvenido a la API Profesional de CarrerOn!"}
