@@ -1,6 +1,7 @@
 from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 from datetime import date, datetime
+from uuid import UUID
 
 # ==========================================
 # AUTH & ONBOARDING
@@ -116,3 +117,18 @@ class SponsorshipCreate(BaseModel):
 class SkillCreate(BaseModel):
     name: str
     category: str
+
+class UserSkillCreate(BaseModel):
+    user_id: UUID
+    skill_id: int
+    level: str
+
+class ExperienceCreate(BaseModel):
+    user_id: UUID
+    company_name: str
+    position: str
+    employment_type: str
+    description: Optional[str] = None
+    start_date: date
+    end_date: Optional[date] = None
+    currently_working: bool
