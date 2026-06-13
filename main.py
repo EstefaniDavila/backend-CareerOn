@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import auth
 from api.routes import onboarding
 from api.routes import recruiter
+from api.routes import ai_coach
 
 app = FastAPI(
     title="CarrerOn API",
@@ -23,6 +24,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Autenticación"])
 app.include_router(onboarding.router, prefix="/api/onboarding", tags=["Onboarding"])
 app.include_router(recruiter.router, prefix="/api/recruiter", tags=["Reclutador"])
+app.include_router(ai_coach.router, prefix="/api/ai", tags=["Coach IA"])
 
 @app.get("/")
 def read_root():

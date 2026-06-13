@@ -15,7 +15,7 @@ def get_onboarding_status(current_user: dict = Depends(get_current_user)):
     """Devuelve el tipo/estado actual del usuario para saber si necesita onboarding."""
     try:
         db: Client = get_db()
-        response = db.table("users").select("*").eq("email", current_user["email"]).execute()
+        response = db.table("Usuario").select("*").eq("email", current_user["email"]).execute()
         
         if not response.data:
             # Auto-registrar usuario si no existe
@@ -26,7 +26,7 @@ def get_onboarding_status(current_user: dict = Depends(get_current_user)):
                 "user_type": "Pending", 
                 "status": "Active"
             }
-            db.table("users").insert(new_user).execute()
+            db.table("Usuario").insert(new_user).execute()
             return {"status": "success", "user_type": "Pending", "onboarding_complete": False, "user": new_user}
         
         user = response.data[0]
@@ -60,7 +60,7 @@ def onboard_student(data: OnboardingStudentRequest, current_user: dict = Depends
             "status": "Active"
         }
         
-        response = db.table("users").update(update_data).eq("email", current_user["email"]).execute()
+        response = db.table("Usuario").update(update_data).eq("email", current_user["email"]).execute()
         
         if response.data:
             return {"status": "success", "message": "¡Onboarding completado! Bienvenido a CarrerOn.", "user": response.data[0]}
@@ -87,7 +87,7 @@ def recruiter_request_code(data: OnboardingRecruiterRequest):
         
         # Guardar datos temporales
         db: Client = get_db()
-        db.table("users").update({
+        db.table("Usuario").update({
             "company_name": data.company_name,
             "job_title": data.job_title,
             "corporate_email": data.corporate_email,
@@ -108,13 +108,13 @@ def recruiter_verify_code(data: VerifyRecruiterRequest):
     try:
         db: Client = get_db()
         # Verificar el código usando la columna temp_code
-        response = db.table("users").select("id, temp_code").eq("email", data.email).execute()
+        response = db.table("Usuario").select("id, temp_code").eq("email", data.email).execute()
         
         if response.data and response.data[0].get("temp_code") == data.code:
             recruiter_id = response.data[0]["id"]
             
             # Código correcto, cambiar el rol a Recruiter
-            db.table("users").update({
+            db.table("Usuario").update({
                 "user_type": "Recruiter",
                 "temp_code": None,
                 "status": "Active"
@@ -122,7 +122,7 @@ def recruiter_verify_code(data: VerifyRecruiterRequest):
             
             # BONO FREEMIUM: Darle 5000 monedas gratis al reclutador nuevo
             try:
-                db.table("company_token_pools").insert({
+                db.table("CompanyTokenPool").insert({
                     "recruiter_id": recruiter_id,
                     "total_tokens_available": 5000
                 }).execute()
