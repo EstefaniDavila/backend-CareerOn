@@ -96,6 +96,9 @@ class ChallengeResponse(BaseModel):
 class JobPostCreate(BaseModel):
     title: str
     description: str
+    location: Optional[str] = "Remoto"
+    job_type: Optional[str] = "Tiempo completo"
+    salary_range: Optional[str] = "No especificado"
     skills_required: List[int]  # IDs de las habilidades requeridas
     required_levels: List[str]  # Niveles exigidos, ej: ['Avanzado', 'Intermedio']
 

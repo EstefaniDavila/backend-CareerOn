@@ -57,6 +57,9 @@ def create_job_post(data: JobPostCreate, current_user: dict = Depends(get_curren
             "recruiter_id": recruiter_id,
             "title": data.title,
             "description": data.description,
+            "location": data.location,
+            "job_type": data.job_type,
+            "salary_range": data.salary_range,
             "is_active": True
         }
         job_resp = db.table("JobPost").insert(job_data).execute()

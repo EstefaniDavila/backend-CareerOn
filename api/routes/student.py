@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+import shutil
 from core.supabase_db import get_db
 from supabase import Client
 from typing import Dict, Any
+from api.dependencies.auth import get_current_user
 
 router = APIRouter()
 
-# En un entorno real usaríamos Depends(get_current_user).
-# Para la demo usaremos el correo hardcodeado de Estefani o pasarlo como query.
 DEMO_EMAIL = "estefanidaviladev@gmail.com"
 
 @router.get("/profile")
@@ -15,7 +15,6 @@ def get_student_profile():
     try:
         db: Client = get_db()
         
-        # 1. Obtener usuario
         user_resp = db.table("Usuario").select("*").eq("email", DEMO_EMAIL).execute()
         if not user_resp.data:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -23,26 +22,21 @@ def get_student_profile():
         user_data = user_resp.data[0]
         user_id = user_data["id"]
         
-        # 2. Obtener experiencia
         exp_resp = db.table("Experience").select("*").eq("user_id", user_id).execute()
         experiences = exp_resp.data if exp_resp.data else []
         
-        # 3. Obtener proyectos
         proj_resp = db.table("Project").select("*").eq("user_id", user_id).execute()
         projects = proj_resp.data if proj_resp.data else []
         
-        # 4. Obtener Habilidades (Skills)
         skill_resp = db.table("UserSkill").select("level, Skill(name)").eq("user_id", user_id).execute()
         skills = skill_resp.data if skill_resp.data else []
 
-        # 5. Obtener Idiomas (Languages) - Intentamos consultar la tabla Language o UserLanguage
         try:
             lang_resp = db.table("UserLanguage").select("level, Language(name)").eq("user_id", user_id).execute()
             languages = lang_resp.data if lang_resp.data else []
         except:
             languages = []
         
-        # 6. Obtener CV (Resume)
         res_resp = db.table("Resume").select("*").eq("user_id", user_id).order("uploaded_at", desc=True).limit(1).execute()
         current_cv = res_resp.data[0] if res_resp.data else None
         
@@ -61,7 +55,7 @@ def get_student_profile():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/resume")
-async def save_new_resume(file: UploadFile = File(...)):
+async def upload_resume(file: UploadFile = File(...)):
     try:
         db: Client = get_db()
         
@@ -71,21 +65,19 @@ async def save_new_resume(file: UploadFile = File(...)):
             
         user_id = user_resp.data[0]["id"]
         
-        # En producción subiríamos `file.file.read()` al Supabase Storage.
-        # Para esta demo guardaremos un registro simulando el URL de subida.
         filename = file.filename
+        file_location = f"uploads/{user_id}_{filename}"
+        with open(file_location, "wb+") as file_object:
+            shutil.copyfileobj(file.file, file_object)
+
+        file_url = f"http://localhost:8000/uploads/{user_id}_{filename}"
         
-        # Simulamos una URL pública (en un entorno real viene de db.storage.from_("cvs").get_public_url)
-        mock_file_url = f"https://carrer-on-storage.com/cvs/{user_id}/{filename}"
-        
-        # Opcionalmente, quitar is_default al CV anterior
         db.table("Resume").update({"is_default": False}).eq("user_id", user_id).execute()
         
-        # Insertar nuevo
         new_resume = {
             "user_id": user_id,
             "title": f"CV Generado - {filename}",
-            "file_url": mock_file_url,
+            "file_url": file_url,
             "is_default": True
         }
         inserted = db.table("Resume").insert(new_resume).execute()
@@ -145,6 +137,23 @@ def add_project(data: ProjectData):
     }).execute()
     return {"status": "success"}
 
+@router.delete("/project/{project_id}")
+def delete_project(project_id: int, current_user: dict = Depends(get_current_user)):
+    try:
+        db: Client = get_db()
+        user_resp = db.table("Usuario").select("id").eq("email", current_user["email"]).execute()
+        if not user_resp.data: 
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        user_id = user_resp.data[0]["id"]
+        
+        db.table("Project").delete().eq("id", project_id).eq("user_id", user_id).execute()
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("Error eliminando proyecto:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
 class SkillData(BaseModel):
     name: str
     level: str
@@ -156,7 +165,6 @@ def add_skill(data: SkillData):
     if not user_resp.data: return {"status": "error"}
     user_id = user_resp.data[0]["id"]
     
-    # 1. Buscar o crear el Skill en la tabla principal
     skill_resp = db.table("Skill").select("id").eq("name", data.name).execute()
     if not skill_resp.data:
         ins = db.table("Skill").insert({"name": data.name, "category": "General"}).execute()
@@ -164,10 +172,96 @@ def add_skill(data: SkillData):
     else:
         skill_id = skill_resp.data[0]["id"]
         
-    # 2. Insertar en UserSkill
     db.table("UserSkill").insert({
         "user_id": user_id,
         "skill_id": skill_id,
         "level": data.level
     }).execute()
     return {"status": "success"}
+
+@router.get("/jobs")
+def get_all_jobs():
+    """Obtiene todas las ofertas de trabajo activas para el feed del estudiante, incluyendo sus skills."""
+    db: Client = get_db()
+    try:
+        jobs_resp = db.table("JobPost").select("*").eq("is_active", True).execute()
+        jobs = jobs_resp.data
+        users_resp = db.table("Usuario").select("id, company_name").eq("type", "Recruiter").execute()
+        recruiters = {u["id"]: u.get("company_name", "Empresa Confidencial") for u in users_resp.data}
+        
+        # Obtener todos los skills y requisitos para hacer el join en memoria (más rápido para hackathon)
+        skills_resp = db.table("Skill").select("id, name").execute()
+        skills_dict = {s["id"]: s["name"] for s in skills_resp.data}
+        
+        reqs_resp = db.table("JobRequirement").select("job_id, skill_id").execute()
+        
+        # Agrupar requirements por job_id
+        job_skills_map = {}
+        for req in reqs_resp.data:
+            job_id = req["job_id"]
+            skill_name = skills_dict.get(req["skill_id"])
+            if skill_name:
+                if job_id not in job_skills_map:
+                    job_skills_map[job_id] = []
+                job_skills_map[job_id].append(skill_name)
+                
+        # Obtener y contar postulaciones reales
+        apps_resp = db.table("Application").select("job_id").execute()
+        app_counts = {}
+        for app in apps_resp.data:
+            jid = app["job_id"]
+            app_counts[jid] = app_counts.get(jid, 0) + 1
+        
+        formatted_jobs = []
+        from datetime import datetime, timezone
+        
+        for j in jobs:
+            # Calcular días desde la creación
+            posted_days_ago = 0
+            if j.get("created_at"):
+                try:
+                    created_date = datetime.fromisoformat(j["created_at"].replace("Z", "+00:00"))
+                    posted_days_ago = (datetime.now(timezone.utc) - created_date).days
+                except:
+                    pass
+
+            formatted_jobs.append({
+                "id": j["id"],
+                "title": j["title"],
+                "company": recruiters.get(j["recruiter_id"], "Empresa Confidencial"),
+                "location": j.get("location") or "Remoto", 
+                "type": j.get("job_type") or "Tiempo completo",
+                "description": j["description"],
+                "skills_required": job_skills_map.get(j["id"], ["React", "CSS", "UI/UX"]),
+                "posted_days_ago": max(posted_days_ago, 0),
+                "applicants_count": app_counts.get(j["id"], 0), # Conteo 100% real
+                "is_match": True,
+                "salary_range": j.get("salary_range") or "No especificado",
+            })
+            
+        return formatted_jobs
+    except Exception as e:
+        print("Error en /api/student/jobs:", e)
+        return []
+
+@router.post("/jobs/{job_id}/apply")
+def apply_to_job(job_id: int, current_user: dict = Depends(get_current_user)):
+    try:
+        user_id = current_user.get("id")
+        # Check if already applied
+        existing = db.table("Application").select("*").eq("job_id", job_id).eq("student_id", user_id).execute()
+        if existing.data:
+            raise HTTPException(status_code=400, detail="Ya has postulado a este empleo.")
+            
+        # Insert application
+        app_data = {
+            "job_id": job_id,
+            "student_id": user_id,
+            "status": "Pendiente"
+        }
+        res = db.table("Application").insert(app_data).execute()
+        return {"message": "Postulación enviada exitosamente", "data": res.data[0]}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
