@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import auth
 from api.routes import onboarding
+from api.routes import recruiter
 
 app = FastAPI(
     title="CarrerOn API",
@@ -21,6 +22,7 @@ app.add_middleware(
 # Incluir los routers (rutas divididas por módulos)
 app.include_router(auth.router, prefix="/api/auth", tags=["Autenticación"])
 app.include_router(onboarding.router, prefix="/api/onboarding", tags=["Onboarding"])
+app.include_router(recruiter.router, prefix="/api/recruiter", tags=["Reclutador"])
 
 @app.get("/")
 def read_root():
