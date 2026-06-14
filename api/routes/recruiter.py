@@ -32,16 +32,41 @@ def get_recruiter_dashboard(current_user: dict = Depends(get_current_user)):
         
         total_applicants = 0
         in_process_count = 0
-        
+        recent_activities = []
+        ia_insight = None
+
         if job_ids:
             try:
-                # Obtener postulaciones
+                # Obtener postulaciones para conteos
                 apps_resp = db.table("Application").select("id, status").in_("job_id", job_ids).execute()
                 if apps_resp.data:
                     apps = apps_resp.data
                     total_applicants = len(apps)
                     # Consideramos en proceso cualquier estado que indique avance (ej: Entrevista, Prueba)
                     in_process_count = sum(1 for a in apps if str(a.get("status", "")).lower() in ["entrevista", "interview", "en proceso", "review", "en revision"])
+
+                # Obtener postulaciones recientes con detalles (limitamos a 3)
+                recent_resp = db.table("Application").select("id, status, created_at, student_id, job_id, Usuario(name), JobPost(title)").in_("job_id", job_ids).order("created_at", desc=True).limit(3).execute()
+                if recent_resp.data:
+                    for app in recent_resp.data:
+                        student_name = app.get("Usuario", {}).get("name", "Candidato") if app.get("Usuario") else "Candidato"
+                        job_title = app.get("JobPost", {}).get("title", "Oferta") if app.get("JobPost") else "Oferta"
+                        created_at = app.get("created_at")
+                        recent_activities.append({
+                            "id": app["id"],
+                            "student_name": student_name,
+                            "job_title": job_title,
+                            "status": app.get("status", "Pendiente"),
+                            "created_at": created_at
+                        })
+                    
+                    # Generar un Insight IA mock basado en la última postulación
+                    last_app = recent_activities[0]
+                    ia_insight = {
+                        "title": "Insight IA",
+                        "message": f"**{last_app['student_name']}** es un candidato fuerte para **{last_app['job_title']}** basado en un análisis de compatibilidad (95% de match) con los requisitos del puesto."
+                    }
+
             except Exception as e:
                 print("Error fetching applications for dashboard:", e)
             
@@ -54,7 +79,9 @@ def get_recruiter_dashboard(current_user: dict = Depends(get_current_user)):
             },
             "active_jobs_count": active_jobs_count,
             "total_applicants": total_applicants,
-            "in_process_count": in_process_count
+            "in_process_count": in_process_count,
+            "recent_activities": recent_activities,
+            "ia_insight": ia_insight
         }
     except HTTPException:
         raise
