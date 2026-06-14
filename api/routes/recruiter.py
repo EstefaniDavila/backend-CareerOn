@@ -48,8 +48,11 @@ def create_job_post(data: JobPostCreate, current_user: dict = Depends(get_curren
             
         recruiter_id = user_resp.data[0]["id"]
         
-        # Generar deadline (3 días en el futuro)
-        future_date = (datetime.now() + timedelta(days=3)).isoformat()
+        # Generar deadline (3 días en el futuro) si no viene en el payload
+        if data.deadline:
+            future_date = data.deadline
+        else:
+            future_date = (datetime.now() + timedelta(days=3)).isoformat()
         
         # 2. Insertar JobPost
         job_data = {
