@@ -19,14 +19,12 @@ def evaluate_job_match(job_id: int, current_user: dict = Depends(get_current_use
     try:
         db: Client = get_db()
         
-        # 1. Obtener perfil completo del estudiante
         user_resp = db.table("Usuario").select("id, name, career, current_cycle, headline").eq("email", current_user["email"]).execute()
         if not user_resp.data:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
             
         student = user_resp.data[0]
         
-        # Opcional: Obtener skills del estudiante de 'user_skills'
         skills_resp = db.table("UserSkill").select("level, Skill(name)").eq("user_id", student["id"]).execute()
         student_skills = []
         if skills_resp.data:
@@ -40,14 +38,12 @@ def evaluate_job_match(job_id: int, current_user: dict = Depends(get_current_use
             "skills": student_skills
         }
         
-        # 2. Obtener detalles de la oferta de trabajo
         job_resp = db.table("JobPost").select("title, description").eq("id", job_id).execute()
         if not job_resp.data:
             raise HTTPException(status_code=404, detail="Vacante no encontrada")
             
         job_info = job_resp.data[0]
         
-        # Obtener los requerimientos del trabajo
         req_resp = db.table("JobRequirement").select("required_level, Skill(name)").eq("job_id", job_id).execute()
         job_requirements = []
         if req_resp.data:
@@ -59,8 +55,16 @@ def evaluate_job_match(job_id: int, current_user: dict = Depends(get_current_use
             "requirements": job_requirements
         }
         
-        # 3. Mandar la data a la IA (Gemini)
-        ia_analysis = analyze_gap_with_gemini(student_profile, job_post_data)
+        student_skills_lower = [s["name"].lower() for s in student_skills]
+        req_skills_lower = [r["name"].lower() for r in job_requirements]
+        
+        if req_skills_lower:
+            matched = set(student_skills_lower).intersection(set(req_skills_lower))
+            precalculated_score = int((len(matched) / len(req_skills_lower)) * 100)
+        else:
+            precalculated_score = 100
+            
+        ia_analysis = analyze_gap_with_gemini(student_profile, job_post_data, precalculated_score)
         
         return {
             "status": "success",

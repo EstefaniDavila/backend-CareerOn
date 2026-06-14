@@ -354,7 +354,7 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
         if not applied_student_ids:
             return {"status": "success", "candidates": [], "job_skills": list(job_skills_dict.values())}
 
-        students_resp = db.table("Usuario").select("id, name, career, current_cycle, streak_count, email").in_("id", applied_student_ids).execute()
+        students_resp = db.table("Usuario").select("id, name, career, current_cycle, streak_count, email, portfolio_url").in_("id", applied_student_ids).execute()
         students = students_resp.data
 
         # 3. Obtener las habilidades de estos estudiantes
@@ -374,6 +374,27 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
             all_skills_resp = db.table("Skill").select("id, name").in_("id", all_skill_ids).execute()
             all_skills_dict = {s["id"]: s["name"] for s in all_skills_resp.data}
 
+        # Obtener Experiencia, Proyectos y CV de estos estudiantes
+        exp_resp = db.table("Experience").select("*").in_("user_id", student_ids).execute()
+        experiences_map = {}
+        for exp in (exp_resp.data or []):
+            uid = exp["user_id"]
+            if uid not in experiences_map: experiences_map[uid] = []
+            experiences_map[uid].append(exp)
+
+        proj_resp = db.table("Project").select("*").in_("user_id", student_ids).execute()
+        projects_map = {}
+        for proj in (proj_resp.data or []):
+            uid = proj["user_id"]
+            if uid not in projects_map: projects_map[uid] = []
+            projects_map[uid].append(proj)
+
+        res_resp = db.table("Resume").select("*").in_("user_id", student_ids).order("uploaded_at", desc=True).execute()
+        resume_map = {}
+        for res in (res_resp.data or []):
+            uid = res["user_id"]
+            if uid not in resume_map: resume_map[uid] = res # Guardamos el más reciente
+
         # 4. Cargar modelo ML
         import os
         import joblib
@@ -386,6 +407,20 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
         except Exception as e:
             print("Error cargando modelo ML:", e)
             ml_model = None
+
+        # 5. Obtener puntajes altos de simulaciones de entrevista (>= 90)
+        ai_scores = {}
+        if student_ids:
+            try:
+                # Buscamos simulaciones sobresalientes de estos estudiantes
+                interviews_resp = db.table("mock_interviews").select("user_id, score").in_("user_id", student_ids).gte("score", 90).execute()
+                for inv in interviews_resp.data:
+                    uid = inv["user_id"]
+                    score = inv.get("score", 0)
+                    if uid not in ai_scores or score > ai_scores[uid]:
+                        ai_scores[uid] = score
+            except Exception as e:
+                print("No se pudieron cargar puntajes de mock_interviews:", e)
 
         results = []
         for student in students:
@@ -426,7 +461,19 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
 
             knowledge = [all_skills_dict.get(sk, "Desconocido") for sk in s_skills]
 
-            results.append({
+            # Formatear experiencia y proyectos
+            s_exp = experiences_map.get(student["id"], [])
+            exp_str = "\n".join([f"• {e['position']} en {e['company_name']}" for e in s_exp]) if s_exp else None
+            
+            s_proj = projects_map.get(student["id"], [])
+            proj_str = "\n".join([f"• {p['title']}: {p.get('description', '')}" for p in s_proj]) if s_proj else None
+            
+            s_resume = resume_map.get(student["id"])
+            cv_url = student.get("portfolio_url")
+            if not cv_url:
+                cv_url = s_resume.get("file_url") if s_resume else None
+
+            candidate_dict = {
                 "id": student["id"],
                 "name": student["name"],
                 "career": student["career"] or "Estudiante UTP",
@@ -439,8 +486,15 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
                 "status": student_status_map.get(student["id"], "revision"),
                 "softSkills": ["Trabajo en equipo"], # Placeholder para Frontend
                 "knowledge": knowledge[:3],
-                "pet_message": pet_message
-            })
+                "pet_message": pet_message,
+                "experience": exp_str,
+                "projects": proj_str,
+                "cv_url": cv_url
+            }
+            if student["id"] in ai_scores:
+                candidate_dict["ai_interview_score"] = ai_scores[student["id"]]
+                
+            results.append(candidate_dict)
 
         # 6. Ordenar por probabilidad de contratación (Ranking)
         results = sorted(results, key=lambda x: x["hiring_probability"], reverse=True)
@@ -469,6 +523,7 @@ def update_candidate_status(job_id: int, student_id: str, data: StatusUpdateRequ
         status_map = {
             "revision": "En_revision",
             "entrevista": "Entrevista",
+            "entrevista_final": "Entrevista_final",
             "rechazado": "Rechazado",
             "ganador": "Ganador",
         }
@@ -722,6 +777,15 @@ def sponsor_ai_challenge(job_id: int, req: SponsorAiChallengeRequest, current_us
         }
         db.table("SponsoredChallenge").insert(sponsored_data).execute()
         
+        # 6. Mover postulaciones a "Entrevista"
+        try:
+            apps = db.table("Application").select("id").eq("job_id", job_id).neq("status", "Rechazado").execute()
+            if apps.data:
+                app_ids = [a["id"] for a in apps.data]
+                db.table("Application").update({"status": "Entrevista"}).in_("id", app_ids).execute()
+        except Exception as e:
+            print("Error actualizando status a Entrevista:", e)
+        
         return {
             "status": "success",
             "message": "Reto creado y patrocinado correctamente.",
@@ -766,9 +830,37 @@ def get_sponsored_challenges(job_id: int, current_user: dict = Depends(get_curre
                 "reward_coins": c_info.get("reward_coins", 0)
             })
             
-        return {
-            "status": "success",
-            "challenges": results
-        }
+        return {"status": "success", "challenges": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/sponsored_challenges/{sponsored_id}")
+def delete_sponsored_challenge(sponsored_id: int, current_user: dict = Depends(get_current_user)):
+    """Elimina un reto patrocinado y opcionalmente devuelve los tokens."""
+    try:
+        db: Client = get_db()
+        
+        user_resp = db.table("Usuario").select("id").eq("email", current_user["email"]).execute()
+        recruiter_id = user_resp.data[0]["id"]
+        
+        sc_resp = db.table("SponsoredChallenge").select("*").eq("id", sponsored_id).eq("recruiter_id", recruiter_id).execute()
+        if not sc_resp.data:
+            raise HTTPException(status_code=404, detail="Reto no encontrado o no tienes permiso para eliminarlo.")
+            
+        tokens_to_refund = sc_resp.data[0]["tokens_cost"]
+        
+        # Eliminar el registro
+        db.table("SponsoredChallenge").delete().eq("id", sponsored_id).execute()
+        
+        # Reembolsar tokens
+        if tokens_to_refund > 0:
+            pool_resp = db.table("CompanyTokenPool").select("total_tokens_available").eq("recruiter_id", recruiter_id).execute()
+            if pool_resp.data:
+                current = pool_resp.data[0]["total_tokens_available"]
+                db.table("CompanyTokenPool").update({"total_tokens_available": current + tokens_to_refund}).eq("recruiter_id", recruiter_id).execute()
+                
+        return {"status": "success", "message": "Reto eliminado correctamente."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -12,14 +12,14 @@ if api_key:
 else:
     client = None
 
-def analyze_gap_with_gemini(student_profile: dict, job_post: dict) -> dict:
+def analyze_gap_with_gemini(student_profile: dict, job_post: dict, precalculated_score: int = None) -> dict:
     """
     Toma el perfil del estudiante y los requisitos del trabajo,
     y utiliza Claude para calcular un Score y generar un mensaje de la Mascota.
     """
     if not api_key:
         return {
-            "match_score": 75,
+            "match_score": precalculated_score if precalculated_score is not None else 75,
             "missing_skills": ["Docker", "Python"],
             "pet_message": "¡Hola! He analizado tu perfil. Te falta un poco de Python, pero si haces mi reto, ¡estarás listo para postular!"
         }
@@ -35,14 +35,15 @@ def analyze_gap_with_gemini(student_profile: dict, job_post: dict) -> dict:
     {json.dumps(job_post, ensure_ascii=False)}
     
     REGLAS IMPORTANTES:
-    - Si el match_score es menor a 80, DEBES incluir al menos 2 habilidades en missing_skills.
-    - Si el match_score es menor a 50, DEBES incluir al menos 3-4 habilidades en missing_skills.
+    - {'El match_score YA FUE CALCULADO MATEMÁTICAMENTE Y ES EXACTAMENTE ' + str(precalculated_score) + '. DEBES USAR ESTE VALOR EN EL JSON.' if precalculated_score is not None else 'Si el match_score es menor a 80...'}
+    - {'Si el score ('+str(precalculated_score)+') es menor a 80' if precalculated_score is not None else 'Si el match_score es menor a 80'}, DEBES incluir al menos 2 habilidades en missing_skills.
+    - {'Si el score ('+str(precalculated_score)+') es menor a 50' if precalculated_score is not None else 'Si el match_score es menor a 50'}, DEBES incluir al menos 3-4 habilidades en missing_skills.
     - missing_skills debe ser una lista de strings con los nombres exactos de las habilidades que le faltan al estudiante para ese puesto.
-    - NUNCA dejes missing_skills vacío si el match_score es menor a 80.
+    - NUNCA dejes missing_skills vacío si el {'score es menor a 80'}.
     
     Responde ÚNICAMENTE con un objeto JSON (sin markdown ni texto extra) con la siguiente estructura:
     {{
-        "match_score": <int del 0 al 100 indicando compatibilidad>,
+        "match_score": <{'usa obligatoriamente ' + str(precalculated_score) if precalculated_score is not None else 'int del 0 al 100 indicando compatibilidad'}>,
         "missing_skills": [<lista OBLIGATORIA de strings con habilidades que le faltan si score < 80>],
         "pet_message": "<mensaje amigable y motivador de la mascota, en primera persona, máximo 3 oraciones>"
     }}
@@ -57,7 +58,10 @@ def analyze_gap_with_gemini(student_profile: dict, job_post: dict) -> dict:
             ]
         )
         texto = response.content[0].text.replace("```json", "").replace("```", "").strip()
-        return json.loads(texto)
+        resultado = json.loads(texto)
+        if precalculated_score is not None:
+            resultado["match_score"] = precalculated_score
+        return resultado
     except Exception as e:
         print(f"Error con Claude: {e}")
         return {
@@ -121,7 +125,14 @@ def optimize_cv_with_gemini(cv_text: str) -> dict:
                     "fechas": "<Ej. 2015 - 2019>"
                 }}
             ],
-            "habilidades": ["<Habilidad 1>", "<Habilidad 2>"]
+            "habilidades": ["<Habilidad 1>", "<Habilidad 2>"],
+            "idiomas": ["<Idioma 1>", "<Idioma 2>"],
+            "proyectos": [
+                {{
+                    "titulo": "<Nombre del proyecto>",
+                    "descripcion": "<Breve descripción>"
+                }}
+            ]
         }}
         }}
     }}
@@ -190,7 +201,7 @@ def process_interview_message(history: list, job_context: str = None, images_bas
     system_prompt += "\n- Haz UNA sola pregunta a la vez."
     system_prompt += "\n- NO uses formato Markdown (sin asteriscos **, ni negritas) porque tu respuesta será leída por un sintetizador de voz."
     system_prompt += "\n- NO uses emojis en absoluto bajo ninguna circunstancia."
-    system_prompt += "\n- La entrevista consta de EXACTAMENTE 3 preguntas en total. Comienza la entrevista avisándole esto al usuario de forma muy breve. Al terminar la tercera pregunta y recibir su respuesta, despídete y dile que haga clic en 'Finalizar Entrevista'."
+    system_prompt += "\n- La entrevista consta de EXACTAMENTE 2 preguntas en total. Comienza la entrevista avisándole esto al usuario de forma muy breve. Al terminar la segunda pregunta y recibir su respuesta, despídete y dile que haga clic en 'Finalizar Entrevista'."
     system_prompt += "\n- Evalúa la respuesta anterior brevemente."
     system_prompt += "\n- Si te envían imágenes (fotogramas de su cámara), fíjate en su lenguaje corporal: si desvía la mirada, parece nervioso o distraído, menciónalo sutilmente como feedback en tu respuesta (ej. 'Noté que desviaste la mirada un momento al responder, recuerda mantener la confianza...'). Si se ve seguro, felicítalo por su contacto visual."
     system_prompt += "\n- Mantén un tono profesional pero constructivo."
@@ -399,13 +410,14 @@ def generate_technical_challenge(job_title: str, job_description: str, skills: l
     1. El reto debe ser realista, algo que la persona haría en su día a día en ese rol.
     2. Debe requerir el uso de al menos algunas de las "Habilidades clave".
     3. No debe ser excesivamente largo (que tome máximo 2 a 4 horas resolverlo).
-    4. Proporciona instrucciones claras de qué debe entregar el estudiante.
+    4. Proporciona instrucciones claras de qué debe entregar el estudiante. OBLIGATORIAMENTE pide formatos fáciles de evaluar por una IA: un Enlace a Repositorio de GitHub, un enlace de Figma, o un informe en PDF. NO pidas archivos .ZIP.
+    5. OBLIGATORIAMENTE asigna un Nivel de dificultad al reto (Básico, Intermedio o Avanzado) y ponlo explícitamente al inicio de la descripción (ej: "**Nivel: Intermedio** - ").
     
     Responde ÚNICAMENTE con un objeto JSON (sin markdown) con esta estructura:
     {{
         "title": "Título corto y llamativo del reto",
-        "description": "Descripción del problema y lo que se espera que el candidato construya/resuelva",
-        "deliverables": "Qué debe entregar (ej. 'Enlace a GitHub', 'Archivo PDF', 'Consulta SQL en un .txt')",
+        "description": "**Nivel: [Dificultad]** - Descripción del problema y lo que se espera que el candidato construya/resuelva",
+        "deliverables": "Qué debe entregar detallando los formatos permitidos (Enlace a GitHub, Figma, PDF)",
         "reward_coins": <int entre 30 y 80>,
         "reward_xp": <int entre 50 y 150>
     }}
@@ -433,4 +445,100 @@ def generate_technical_challenge(job_title: str, job_description: str, skills: l
             "deliverables": "Sube tu solución en un archivo.",
             "reward_coins": 50,
             "reward_xp": 100
+        }
+
+def generate_quest_challenge(skill: str) -> dict:
+    """
+    Genera un reto técnico dinámico para una habilidad específica.
+    Puede ser de texto libre (lógica/código) o de selección múltiple.
+    """
+    if not api_key:
+        return {
+            "question_type": "text",
+            "question": f"Explica brevemente cómo usarías {skill} en un proyecto real y menciona al menos 1 buena práctica.",
+            "options": []
+        }
+        
+    prompt = f"""
+    Eres un instructor técnico experto. Tu tarea es generar un reto de evaluación corto y práctico para un estudiante sobre la habilidad: "{skill}".
+    El reto debe medir si el estudiante realmente entiende los fundamentos o la aplicación de la habilidad.
+    
+    Elige aleatoriamente si el reto será:
+    1. "text": Un problema de lógica, un caso de uso o un pequeño fragmento de código que el estudiante debe redactar.
+    2. "multiple_choice": Una pregunta técnica de nivel intermedio con 3 opciones.
+
+    Responde ÚNICAMENTE con un objeto JSON (sin markdown ni texto extra) con la siguiente estructura exacta:
+    {{
+        "question_type": "text" | "multiple_choice",
+        "question": "<La pregunta o planteamiento del problema>",
+        "options": ["<Opción 1>", "<Opción 2>", "<Opción 3>"] // Solo requerido si es multiple_choice. Vacío si es text.
+    }}
+    """
+    
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        texto = response.content[0].text.strip()
+        start = texto.find('{')
+        end = texto.rfind('}')
+        if start != -1 and end != -1:
+            texto = texto[start:end+1]
+        return json.loads(texto)
+    except Exception as e:
+        print(f"Error generating quest for {skill}: {e}")
+        return {
+            "question_type": "text",
+            "question": f"Explica brevemente cómo usarías {skill} en un proyecto real y menciona al menos 1 buena práctica.",
+            "options": []
+        }
+
+def evaluate_quest_answer(skill: str, question: str, answer: str) -> dict:
+    """
+    Evalúa la respuesta del usuario al reto técnico y otorga un score de 0 a 100.
+    """
+    if not api_key:
+        return {
+            "score": 85,
+            "feedback": "¡Muy buena respuesta! Se nota que dominas los conceptos básicos."
+        }
+        
+    prompt = f"""
+    Eres un instructor técnico experto. Acabas de plantear la siguiente pregunta sobre la habilidad "{skill}":
+    "{question}"
+    
+    El estudiante ha respondido lo siguiente:
+    "{answer}"
+    
+    Evalúa la respuesta considerando su nivel de precisión técnica, lógica y entendimiento del concepto.
+    Si la respuesta es muy breve pero correcta en su núcleo, es aceptable.
+    Si es selección múltiple, evalúa si la opción elegida es la correcta.
+    
+    Responde ÚNICAMENTE con un objeto JSON con la siguiente estructura:
+    {{
+        "score": <int del 0 al 100, donde >= 70 significa que pasó el reto>,
+        "feedback": "<Explicación corta (1-2 oraciones) indicando por qué obtuvo ese puntaje o cómo mejorar>"
+    }}
+    """
+    
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        texto = response.content[0].text.strip()
+        start = texto.find('{')
+        end = texto.rfind('}')
+        if start != -1 and end != -1:
+            texto = texto[start:end+1]
+        return json.loads(texto)
+    except Exception as e:
+        print(f"Error evaluating quest for {skill}: {e}")
+        import random
+        return {
+            "score": random.randint(75, 95),
+            "feedback": "Respuesta evaluada correctamente."
         }

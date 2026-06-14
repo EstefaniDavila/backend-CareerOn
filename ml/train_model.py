@@ -19,7 +19,7 @@ cycle = np.random.randint(1, 11, size=n_samples)
 streak = np.random.exponential(scale=10, size=n_samples)
 streak = np.clip(streak, 0, 50).astype(int)
 
-# 2. DEFINIR REGLA DE CONTRATACIÓN (Aproximación para que el modelo aprenda la tendencia)
+# DEFINIR REGLA DE CONTRATACIÓN (Aproximación para que el modelo aprenda la tendencia)
 # Pesos: 40% skill, 40% ai_fit, 10% ciclo, 10% racha
 score = (0.4 * skill_match) + (0.4 * ai_fit_score) + (cycle * 2) + (streak * 0.5)
 
@@ -30,7 +30,6 @@ score += np.random.normal(loc=0, scale=5, size=n_samples)
 threshold = np.percentile(score, 70)
 hired = (score >= threshold).astype(int)
 
-# Crear DataFrame
 df = pd.DataFrame({
     'skill_match': skill_match,
     'ai_fit_score': ai_fit_score,
