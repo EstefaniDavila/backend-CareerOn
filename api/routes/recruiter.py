@@ -166,6 +166,68 @@ def update_job_post(
             status_code=500,
             detail=str(e)
         )
+    
+
+@router.delete("/jobs/{job_id}")
+def delete_job_post(
+    job_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        db: Client = get_db()
+
+        user_resp = (db.table("Usuario").select("id, type").eq("email", current_user["email"]).execute())
+
+        if not user_resp.data or user_resp.data[0]["type"] != "Recruiter":
+            raise HTTPException(
+                status_code=403,
+                detail="Solo reclutadores pueden eliminar ofertas."
+            )
+
+        recruiter_id = user_resp.data[0]["id"]
+
+        job_resp = (
+            db.table("JobPost")
+            .select("id")
+            .eq("id", job_id)
+            .eq("recruiter_id", recruiter_id)
+            .execute()
+        )
+
+        if not job_resp.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Oferta no encontrada."
+            )
+
+        db.table("JobRequirement") \
+            .delete() \
+            .eq("job_id", job_id) \
+            .execute()
+
+        db.table("Application") \
+            .delete() \
+            .eq("job_id", job_id) \
+            .execute()
+
+        db.table("JobPost") \
+            .delete() \
+            .eq("id", job_id) \
+            .execute()
+
+        return {
+            "status": "success",
+            "message": "Oferta eliminada correctamente."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
 
 @router.get("/jobs")
 def list_my_jobs(current_user: dict = Depends(get_current_user)):
