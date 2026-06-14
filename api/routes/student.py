@@ -184,7 +184,8 @@ def get_all_jobs():
     """Obtiene todas las ofertas de trabajo activas para el feed del estudiante, incluyendo sus skills."""
     db: Client = get_db()
     try:
-        jobs_resp = db.table("JobPost").select("*").eq("is_active", True).execute()
+        # Filtramos por status = "publicada"
+        jobs_resp = db.table("JobPost").select("*").eq("status", "publicada").execute()
         jobs = jobs_resp.data
         users_resp = db.table("Usuario").select("id, company_name").eq("type", "Recruiter").execute()
         recruiters = {u["id"]: u.get("company_name", "Empresa Confidencial") for u in users_resp.data}

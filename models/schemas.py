@@ -101,6 +101,7 @@ class JobPostCreate(BaseModel):
     salary_range: Optional[str] = "No especificado"
     skills_required: List[int]  # IDs de las habilidades requeridas
     required_levels: List[str]  # Niveles exigidos, ej: ['Avanzado', 'Intermedio']
+    deadline: Optional[str] = None
 
 class SponsoredChallengeCreate(BaseModel):
     challenge_id: int
