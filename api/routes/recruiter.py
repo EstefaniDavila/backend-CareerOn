@@ -13,7 +13,7 @@ def get_recruiter_dashboard(current_user: dict = Depends(get_current_user)):
         db: Client = get_db()
         
         user_response = db.table("Usuario").select("id, company_name, job_title, type").eq("email", current_user["email"]).execute()
-        if not user_response.data or user_response.data[0].get("user_type") != "Recruiter":
+        if not user_response.data or user_response.data[0].get("type") != "Recruiter":
             raise HTTPException(status_code=403, detail="Acceso denegado. No eres reclutador.")
         recruiter = user_response.data[0]
         token_response = db.table("CompanyTokenPool").select("total_tokens_available").eq("recruiter_id", recruiter["id"]).execute()
@@ -99,7 +99,7 @@ def update_job_post(
 
         user_resp = (db.table("Usuario").select("id, type").eq("email", current_user["email"]).execute())
 
-        if not user_resp.data or user_resp.data[0]["type"] != "Recruiter":
+        if not user_resp.data or user_resp.data[0].get("type") != "Recruiter":
             raise HTTPException(
                 status_code=403,
                 detail="Solo reclutadores pueden editar ofertas."
