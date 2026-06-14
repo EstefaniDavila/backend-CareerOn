@@ -289,3 +289,97 @@ def apply_to_job(job_id: int, current_user: dict = Depends(get_current_user)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/applications/{status}")
+def get_my_applications_by_status(
+    status: str,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        db: Client = get_db()
+
+        user_resp = db.table("Usuario").select("id").eq("email", current_user["email"]).execute()
+
+        if not user_resp.data:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        user_id = user_resp.data[0]["id"]
+
+        apps_resp = db.table("Application") \
+            .select("""
+                *,
+                JobPost (
+                    id,
+                    title,
+                    description,
+                    location,
+                    salary_range
+                )
+            """) \
+            .eq("student_id", user_id) \
+            .eq("status", status) \
+            .execute()
+
+        return apps_resp.data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/applications/{application_id}")
+def delete_application(
+    application_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        db: Client = get_db()
+
+        user_resp = (db.table("Usuario").select("id").eq("email", current_user["email"]).execute())
+
+        if not user_resp.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Usuario no encontrado"
+            )
+
+        user_id = user_resp.data[0]["id"]
+
+        application_resp = (
+            db.table("Application")
+            .select("id")
+            .eq("id", application_id)
+            .eq("student_id", user_id)
+            .execute()
+        )
+
+        if not application_resp.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Postulación no encontrada"
+            )
+
+        (
+            db.table("Application")
+            .delete()
+            .eq("id", application_id)
+            .eq("student_id", user_id)
+            .execute()
+        )
+
+        return {
+            "status": "success",
+            "message": "Postulación eliminada correctamente"
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
