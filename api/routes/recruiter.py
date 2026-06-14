@@ -259,6 +259,11 @@ def delete_job_post(
             .eq("job_id", job_id) \
             .execute()
 
+        db.table("SponsoredChallenge") \
+            .delete() \
+            .eq("job_id", job_id) \
+            .execute()
+
         db.table("Application") \
             .delete() \
             .eq("job_id", job_id) \
