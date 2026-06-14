@@ -34,11 +34,17 @@ def analyze_gap_with_gemini(student_profile: dict, job_post: dict) -> dict:
     Oferta de Trabajo:
     {json.dumps(job_post, ensure_ascii=False)}
     
+    REGLAS IMPORTANTES:
+    - Si el match_score es menor a 80, DEBES incluir al menos 2 habilidades en missing_skills.
+    - Si el match_score es menor a 50, DEBES incluir al menos 3-4 habilidades en missing_skills.
+    - missing_skills debe ser una lista de strings con los nombres exactos de las habilidades que le faltan al estudiante para ese puesto.
+    - NUNCA dejes missing_skills vacío si el match_score es menor a 80.
+    
     Responde ÚNICAMENTE con un objeto JSON (sin markdown ni texto extra) con la siguiente estructura:
     {{
         "match_score": <int del 0 al 100 indicando compatibilidad>,
-        "missing_skills": [<lista de strings con habilidades técnicas que le faltan>],
-        "pet_message": "<mensaje amigable y motivador de la mascota, en primera persona, recomendándole aprender lo que le falta y animándolo>"
+        "missing_skills": [<lista OBLIGATORIA de strings con habilidades que le faltan si score < 80>],
+        "pet_message": "<mensaje amigable y motivador de la mascota, en primera persona, máximo 3 oraciones>"
     }}
     """
     
