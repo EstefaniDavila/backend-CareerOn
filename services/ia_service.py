@@ -292,3 +292,145 @@ def evaluate_interview(history: list, job_context: str = None) -> dict:
             "score": 75,
             "feedback": "Tuviste un buen desempeño, pero hay margen de mejora en la claridad de tus respuestas."
         }
+
+def generate_job_offer_with_ia(prompt_text: str, current_skills: list = None) -> dict:
+    """
+    Toma un texto dictado por el reclutador y devuelve la oferta estructurada en JSON.
+    Si se pasa current_skills, la IA intentará matchear las habilidades requeridas con las existentes o creará nuevas.
+    """
+    if not api_key:
+        return {
+            "title": "Desarrollador Backend Senior",
+            "job_type": "Tiempo completo",
+            "location": "Remoto",
+            "salary_range": "3000 - 4500",
+            "description": "Buscamos un desarrollador experimentado para liderar nuestro equipo de backend...",
+            "skills_required": ["Python", "FastAPI", "Docker"]
+        }
+    
+    import datetime
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    skills_context = ""
+    if current_skills:
+        skills_context = f"Habilidades existentes en el sistema: {', '.join(current_skills)}. Trata de usar estas si aplican, o crea nuevas si es estrictamente necesario."
+
+    system_prompt = f"""
+    Eres un asistente de Recursos Humanos experto en redacción de ofertas laborales.
+    Tu tarea es recibir una transcripción de voz de un reclutador y convertirla en una oferta de trabajo estructurada y profesional.
+    
+    HOY ES: {current_date}
+    
+    TEXTO DEL RECLUTADOR:
+    "{prompt_text}"
+    
+    {skills_context}
+    
+    Reglas:
+    - job_type debe ser uno de: "Tiempo completo", "Medio tiempo", "Contrato", "Prácticas", "Remoto". Si no se especifica, usa "Tiempo completo".
+    - location debe ser una ciudad o "Remoto".
+    - skills_required debe ser una lista de strings. Extrae las tecnologías y habilidades clave mencionadas.
+    - deadline: Extrae o deduce la fecha límite de postulaciones mencionada y devuélvela en formato "YYYY-MM-DD". Si el reclutador dice "el 16 de este mes", usa el mes actual y pon día 16. Si no menciona fecha límite, devuelve "".
+    - Elabora una description profesional de 2-3 párrafos basada en lo que pide.
+    
+    Responde ÚNICAMENTE con un objeto JSON (sin markdown) con esta estructura:
+    {{
+        "title": "Título del puesto",
+        "job_type": "Tiempo completo",
+        "location": "Ubicación o Remoto",
+        "salary_range": "Rango salarial si lo menciona, o 'No especificado'",
+        "description": "Descripción detallada del puesto basada en el prompt",
+        "deadline": "YYYY-MM-DD o vacio",
+        "skills_required": ["Skill1", "Skill2"]
+    }}
+    """
+    
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=2048,
+            messages=[
+                {"role": "user", "content": system_prompt}
+            ]
+        )
+        texto = response.content[0].text.replace("```json", "").replace("```", "").strip()
+        # Encontrar llaves por si acaso
+        start = texto.find('{')
+        end = texto.rfind('}')
+        if start != -1 and end != -1:
+            texto = texto[start:end+1]
+        return json.loads(texto)
+    except Exception as e:
+        print(f"Error generando oferta: {e}")
+        return {
+            "title": "Oferta generada",
+            "job_type": "Tiempo completo",
+            "location": "Remoto",
+            "salary_range": "No especificado",
+            "description": "Hubo un problema al estructurar la oferta, por favor revisa y edita manualmente. Texto original: " + prompt_text,
+            "skills_required": []
+        }
+
+def generate_technical_challenge(job_title: str, job_description: str, skills: list) -> dict:
+    """
+    Usa Claude para generar un reto técnico basado en la descripción de la oferta y las habilidades requeridas.
+    """
+    if not api_key:
+        return {
+            "title": f"Reto Práctico: {job_title}",
+            "description": "Desarrolla una solución que resuelva un problema común en este rol utilizando las habilidades requeridas.",
+            "deliverables": "Sube un archivo ZIP con tu código o un enlace a tu repositorio público.",
+            "reward_coins": 50,
+            "reward_xp": 100
+        }
+
+    skills_str = ", ".join(skills) if skills else "habilidades generales"
+
+    system_prompt = f"""
+    Eres un reclutador técnico senior y experto en evaluaciones.
+    Tu tarea es generar un "Reto Técnico" o "Misión" para evaluar a los candidatos de una oferta laboral.
+    
+    OFERTA LABORAL:
+    Título: {job_title}
+    Descripción: {job_description}
+    Habilidades clave: {skills_str}
+    
+    REGLAS:
+    1. El reto debe ser realista, algo que la persona haría en su día a día en ese rol.
+    2. Debe requerir el uso de al menos algunas de las "Habilidades clave".
+    3. No debe ser excesivamente largo (que tome máximo 2 a 4 horas resolverlo).
+    4. Proporciona instrucciones claras de qué debe entregar el estudiante.
+    
+    Responde ÚNICAMENTE con un objeto JSON (sin markdown) con esta estructura:
+    {{
+        "title": "Título corto y llamativo del reto",
+        "description": "Descripción del problema y lo que se espera que el candidato construya/resuelva",
+        "deliverables": "Qué debe entregar (ej. 'Enlace a GitHub', 'Archivo PDF', 'Consulta SQL en un .txt')",
+        "reward_coins": <int entre 30 y 80>,
+        "reward_xp": <int entre 50 y 150>
+    }}
+    """
+    
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": system_prompt}
+            ]
+        )
+        texto = response.content[0].text.replace("```json", "").replace("```", "").strip()
+        start = texto.find('{')
+        end = texto.rfind('}')
+        if start != -1 and end != -1:
+            texto = texto[start:end+1]
+        return json.loads(texto)
+    except Exception as e:
+        print(f"Error generando reto técnico: {e}")
+        return {
+            "title": f"Reto de {job_title}",
+            "description": "Por favor, resuelve el caso práctico relacionado a esta oferta.",
+            "deliverables": "Sube tu solución en un archivo.",
+            "reward_coins": 50,
+            "reward_xp": 100
+        }
