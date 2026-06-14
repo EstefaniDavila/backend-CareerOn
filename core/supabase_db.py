@@ -1,7 +1,7 @@
 from supabase import create_client, Client
 from .config import settings
 
-# Se inicializa el cliente de Supabase
+# Se inicializa el cliente de Supabase de manera global
 supabase: Client | None = None
 
 if settings.SUPABASE_URL and settings.SUPABASE_KEY:

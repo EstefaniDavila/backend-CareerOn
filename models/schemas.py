@@ -115,7 +115,6 @@ class SponsorshipCreate(BaseModel):
     job_id: Optional[int] = None
     sponsored_challenge_id: int
 
-# ==========================================
 # ESQUEMAS DE ESTUDIANTE
 # ==========================================
 class SkillCreate(BaseModel):
