@@ -248,21 +248,44 @@ def get_all_jobs():
 @router.post("/jobs/{job_id}/apply")
 def apply_to_job(job_id: int, current_user: dict = Depends(get_current_user)):
     try:
-        user_id = current_user.get("id")
-        # Check if already applied
-        existing = db.table("Application").select("*").eq("job_id", job_id).eq("student_id", user_id).execute()
+        db: Client = get_db()
+
+        user_resp = db.table("Usuario") \
+            .select("id") \
+            .eq("email", current_user["email"]) \
+            .execute()
+
+        if not user_resp.data:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        user_id = user_resp.data[0]["id"]
+
+        existing = db.table("Application") \
+            .select("*") \
+            .eq("job_id", job_id) \
+            .eq("student_id", user_id) \
+            .execute()
+
         if existing.data:
-            raise HTTPException(status_code=400, detail="Ya has postulado a este empleo.")
-            
-        # Insert application
+            raise HTTPException(
+                status_code=400,
+                detail="Ya has postulado a este empleo."
+            )
+
         app_data = {
             "job_id": job_id,
             "student_id": user_id,
             "status": "Pendiente"
         }
+
         res = db.table("Application").insert(app_data).execute()
-        return {"message": "Postulación enviada exitosamente", "data": res.data[0]}
+
+        return {
+            "message": "Postulación enviada exitosamente",
+            "data": res.data[0]
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail=str(e))
