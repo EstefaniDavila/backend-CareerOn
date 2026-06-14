@@ -15,12 +15,7 @@ def get_my_skills(
     try:
         db: Client = get_db()
 
-        user_resp = (
-            db.table("Usuario")
-            .select("id")
-            .eq("email", current_user["email"])
-            .execute()
-        )
+        user_resp = db.table("Usuario").select("id, type").eq("email", current_user["email"]).execute()
 
         if not user_resp.data:
             raise HTTPException(
