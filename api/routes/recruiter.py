@@ -45,15 +45,12 @@ def create_job_post(data: JobPostCreate, current_user: dict = Depends(get_curren
         user_resp = db.table("Usuario").select("id, type").eq("email", current_user["email"]).execute()
         if not user_resp.data or user_resp.data[0].get("type") != "Recruiter":
             raise HTTPException(status_code=403, detail="Solo reclutadores pueden publicar ofertas.")
-            
         recruiter_id = user_resp.data[0]["id"]
-        
         # Generar deadline (3 días en el futuro) si no viene en el payload
         if data.deadline:
             future_date = data.deadline
         else:
             future_date = (datetime.now() + timedelta(days=3)).isoformat()
-        
         # 2. Insertar JobPost
         job_data = {
             "recruiter_id": recruiter_id,
@@ -68,7 +65,6 @@ def create_job_post(data: JobPostCreate, current_user: dict = Depends(get_curren
         }
         job_resp = db.table("JobPost").insert(job_data).execute()
         new_job_id = job_resp.data[0]["id"]
-        
         # 3. Insertar Skills requeridos (JobRequirements)
         requirements = []
         for i, skill_id in enumerate(data.skills_required):
