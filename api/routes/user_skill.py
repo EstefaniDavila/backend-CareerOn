@@ -27,7 +27,7 @@ def get_my_skills(
 
         response = (
             db.table("UserSkill")
-            .select("*")
+            .select("*, skill:Skill(*)")
             .eq("user_id", user_id)
             .execute()
         )
