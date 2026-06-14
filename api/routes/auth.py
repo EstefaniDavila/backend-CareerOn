@@ -38,15 +38,12 @@ def login_with_microsoft(data: LoginRequest):
             message = "Usuario nuevo registrado. ¡Ganaste 10 monedas de bienvenida!"
         else:
             user_data = response.data[0]
-            # Lógica básica de racha (streak) al iniciar sesión
-            # En producción se debe comparar 'last_login' con la fecha actual
             new_streak = user_data.get("streak_count", 0) + 1
             new_coins = user_data.get("coins_balance", 0) + 5
             
             db.table("Usuario").update({
                 "streak_count": new_streak,
                 "coins_balance": new_coins
-                # Aquí iría last_login: current_timestamp
             }).eq("id", user_data["id"]).execute()
             
             user_data["streak_count"] = new_streak
@@ -69,7 +66,6 @@ def send_code(data: EmailCodeRequest):
         send_verification_code(data.email, code)
         db: Client = get_db()
         
-        # Corregido: codigo_temp -> temp_code, correo -> email
         db.table("Usuario").update({"temp_code": code}).eq("email", data.email).execute()
         
         return {"status": "success", "message": "Código enviado correctamente."}
@@ -81,18 +77,13 @@ def verify_code(data: VerifyCodeRequest):
     try:
         db: Client = get_db()
         
-        # Corregido: codigo_temp -> temp_code, correo -> email
         response = db.table("Usuario").select("temp_code").eq("email", data.email).execute()
         
         if response.data and response.data[0].get("temp_code") == data.code:
-            # Corregido: tipo -> type, Empresa -> Recruiter
             db.table("Usuario").update({
                 "type": "Recruiter",
                 "temp_code": None
             }).eq("email", data.email).execute()
-            
-            # TODO: Crear el CompanyTokenPool con 5000 monedas gratis aquí
-            
             return {"status": "success", "message": "Código validado. Ahora eres Reclutador."}
         else:
             raise HTTPException(status_code=400, detail="Código inválido o expirado.")

@@ -6,7 +6,6 @@ from supabase import create_client
 load_dotenv()
 supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
 
-# +3 days from now
 future_date = (datetime.now() + timedelta(days=3)).isoformat()
 
 jobs = supabase.table('JobPost').select('id').execute()

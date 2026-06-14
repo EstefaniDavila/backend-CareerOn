@@ -3,7 +3,6 @@ import random
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Cargar variables de entorno
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -17,9 +16,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 def seed_database():
     print("🌱 Iniciando proceso de Seed (Poblado de Base de Datos)...")
 
-    # 1. Crear Skills (Diversas Carreras)
     skills_data = [
-        # Software & Data
         {"name": "Python", "category": "Desarrollo"},
         {"name": "React", "category": "Desarrollo"},
         {"name": "Docker", "category": "DevOps"},
@@ -65,16 +62,13 @@ def seed_database():
         else:
             skills_inserted.append(res.data[0])
 
-    # Extraer IDs de los skills insertados
     skill_ids = [s["id"] for s in skills_inserted]
 
-    # 2. Generador de Datos Masivos (Nombres y Empresas)
     first_names = ["Ana", "Carlos", "Maria", "Juan", "Laura", "Pedro", "Sofia", "Diego", "Luis", "Elena", "Andres", "Valeria", "Jorge", "Camila", "Miguel", "Lucia", "Fernando", "Diana", "Gabriel", "Isabella"]
     last_names = ["Perez", "Gomez", "Lopez", "Diaz", "Martinez", "Rodriguez", "Fernandez", "Garcia", "Sanchez", "Romero", "Suarez", "Torres", "Ruiz", "Flores", "Acosta", "Medina", "Rojas", "Cruz"]
     companies = ["Google", "Globant", "Microsoft", "Amazon", "BCP", "Interbank", "Mercado Libre", "Kavak", "Rappi", "IBM"]
     careers = ["Ing. Sistemas", "Ciencias de la Computacion", "Ing. Industrial", "Marketing", "Administracion", "Diseno Grafico", "Economia", "Ing. Mecanica"]
     
-    # 3. Crear Reclutadores (10 Reclutadores)
     print("👉 Insertando Reclutadores...")
     recruiters_inserted = []
     for i in range(10):

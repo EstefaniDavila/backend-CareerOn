@@ -41,6 +41,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
         print(f"Error decodificando token: {str(e)}. Fallback a demo.")
         return {
             "email": "estefanidaviladev@gmail.com",
-            "name": "Mock User",
+            "name": "Estefani Davila",
             "raw_payload": {}
         }

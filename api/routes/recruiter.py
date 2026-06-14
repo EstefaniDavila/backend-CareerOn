@@ -421,7 +421,7 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
         if not applied_student_ids:
             return {"status": "success", "candidates": [], "job_skills": list(job_skills_dict.values())}
 
-        students_resp = db.table("Usuario").select("id, name, career, current_cycle, streak_count, email, portfolio_url").in_("id", applied_student_ids).execute()
+        students_resp = db.table("Usuario").select("id, name, career, current_cycle, streak_count, email, portfolio_url, github_url").in_("id", applied_student_ids).execute()
         students = students_resp.data
 
         # 3. Obtener las habilidades de estos estudiantes
@@ -460,7 +460,7 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
         resume_map = {}
         for res in (res_resp.data or []):
             uid = res["user_id"]
-            if uid not in resume_map: resume_map[uid] = res # Guardamos el más reciente
+            if uid not in resume_map: resume_map[uid] = res 
 
         # 4. Cargar modelo ML
         import os
@@ -503,14 +503,11 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
                 skill_match = 100
                 missing_names = []
 
-            # Extraer ciclo y racha del estudiante (necesarios para el cálculo de fit)
             cycle = student.get("current_cycle") or 1
             streak = student.get("streak_count") or 0
 
-            # Fit score determinístico: basado en skill_match + bonus por ciclo y racha
-            # (Cuando se integre Claude, esto se reemplazará con el análisis real de IA)
-            cycle_bonus = min(cycle * 2, 20)       # máximo +20 por ciclo alto
-            streak_bonus = min(streak * 0.5, 10)   # máximo +10 por racha
+            cycle_bonus = min(cycle * 2, 20)      
+            streak_bonus = min(streak * 0.5, 10) 
             ai_fit_score = min(int(skill_match * 0.7 + cycle_bonus + streak_bonus), 100)
             
             if not missing_names:
@@ -539,6 +536,7 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
             cv_url = student.get("portfolio_url")
             if not cv_url:
                 cv_url = s_resume.get("file_url") if s_resume else None
+            challenge_url = student.get("github_url")
 
             candidate_dict = {
                 "id": student["id"],
@@ -556,7 +554,8 @@ def get_job_candidates(job_id: int, current_user: dict = Depends(get_current_use
                 "pet_message": pet_message,
                 "experience": exp_str,
                 "projects": proj_str,
-                "cv_url": cv_url
+                "cv_url": cv_url,
+                "challenge_url": challenge_url
             }
             if student["id"] in ai_scores:
                 candidate_dict["ai_interview_score"] = ai_scores[student["id"]]
@@ -814,22 +813,15 @@ def sponsor_ai_challenge(job_id: int, req: SponsorAiChallengeRequest, current_us
             "title": req.title,
             "description": f"{req.description}\n\nEntregables: {req.deliverables}",
             "reward_coins": req.reward_coins,
-            "reward_xp": req.reward_xp,
-            "challenge_type": "technical", # o puedes omitirlo si no está en tu esquema
-            "author_id": recruiter_id
+            "reward_xp": req.reward_xp
         }
         
-        # Omitimos campos si no existen en BD, filtramos
         try:
             ch_resp = db.table("Challenge").insert(challenge_data).execute()
-        except Exception:
-            # Si falla por campos que no existen, intentamos el mínimo
-            ch_resp = db.table("Challenge").insert({
-                "skill_id": skill_id,
-                "title": req.title,
-                "reward_coins": req.reward_coins,
-                "reward_xp": req.reward_xp
-            }).execute()
+        except Exception as e:
+            print("Error insertando Challenge:", e)
+            # Fallback (no debería fallar ahora que los campos son correctos)
+            ch_resp = db.table("Challenge").insert(challenge_data).execute()
             
         new_challenge_id = ch_resp.data[0]["id"]
         
@@ -844,14 +836,14 @@ def sponsor_ai_challenge(job_id: int, req: SponsorAiChallengeRequest, current_us
         }
         db.table("SponsoredChallenge").insert(sponsored_data).execute()
         
-        # 6. Mover postulaciones a "Entrevista"
+        # 6. Mover postulaciones a "Reto Técnico"
         try:
             apps = db.table("Application").select("id").eq("job_id", job_id).neq("status", "Rechazado").execute()
             if apps.data:
                 app_ids = [a["id"] for a in apps.data]
-                db.table("Application").update({"status": "Entrevista"}).in_("id", app_ids).execute()
+                db.table("Application").update({"status": "Reto Técnico"}).in_("id", app_ids).execute()
         except Exception as e:
-            print("Error actualizando status a Entrevista:", e)
+            print("Error actualizando status a Reto Técnico:", e)
         
         return {
             "status": "success",

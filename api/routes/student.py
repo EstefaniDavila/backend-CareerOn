@@ -434,7 +434,7 @@ def get_my_applications_by_status(
 
         user_id = user_resp.data[0]["id"]
 
-        apps_resp = db.table("Application") \
+        query = db.table("Application") \
             .select("""
                 *,
                 JobPost (
@@ -445,15 +445,39 @@ def get_my_applications_by_status(
                     salary_range
                 )
             """) \
-            .eq("student_id", user_id) \
-            .eq("status", status) \
-            .execute()
+            .eq("student_id", user_id)
+            
+        if status == "Entrevista":
+            query = query.in_("status", ["Entrevista", "Reto Técnico"])
+        else:
+            query = query.eq("status", status)
+            
+        apps_resp = query.execute()
 
         return apps_resp.data
 
     except HTTPException:
         raise
     except Exception as e:
+        print("Error en get_my_applications_by_status:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+from pydantic import BaseModel
+class SubmitChallengeRequest(BaseModel):
+    url: str | None = None
+
+@router.post("/applications/{application_id}/submit-challenge")
+def submit_challenge(application_id: int, req: SubmitChallengeRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        db: Client = get_db()
+        db.table("Application").update({"status": "Entrevista"}).eq("id", application_id).execute()
+        
+        if req.url:
+            db.table("Usuario").update({"github_url": req.url}).eq("email", current_user["email"]).execute()
+            
+        return {"status": "success"}
+    except Exception as e:
+        print("Error submitting challenge:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -502,12 +526,79 @@ def delete_application(
             "message": "Postulación eliminada correctamente"
         }
 
-    except HTTPException:
-        raise
-
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=str(e)
         )
 
+@router.get("/company-challenges")
+def get_company_challenges(current_user: dict = Depends(get_current_user)):
+    """Obtiene los retos patrocinados de los empleos a los que el estudiante postuló y pasó el filtro."""
+    try:
+        db: Client = get_db()
+
+        # 1. Obtener ID del estudiante
+        user_resp = db.table("Usuario").select("id").eq("email", current_user["email"]).execute()
+        if not user_resp.data:
+            user_resp = db.table("Usuario").select("id").eq("email", DEMO_EMAIL).execute()
+        
+        if not user_resp.data:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        user_id = user_resp.data[0]["id"]
+
+        # 2. Buscar aplicaciones en "Reto Técnico"
+        apps_resp = db.table("Application").select("id, job_id, JobPost(title, recruiter_id)").eq("student_id", user_id).eq("status", "Reto Técnico").execute()
+        if not apps_resp.data:
+            return []
+
+        job_ids = [app["job_id"] for app in apps_resp.data]
+        
+        # Guardar nombres de reclutadores/empresas
+        recruiter_ids = list(set([app["JobPost"]["recruiter_id"] for app in apps_resp.data if app.get("JobPost")]))
+        companies_map = {}
+        if recruiter_ids:
+            rec_resp = db.table("Usuario").select("id, company_name").in_("id", recruiter_ids).execute()
+            companies_map = {r["id"]: r.get("company_name", "Empresa Confidencial") for r in rec_resp.data}
+
+        # 3. Buscar SponsoredChallenges
+        sc_resp = db.table("SponsoredChallenge").select("*").in_("job_id", job_ids).execute()
+        if not sc_resp.data:
+            return []
+
+        challenge_ids = [sc["challenge_id"] for sc in sc_resp.data]
+
+        # 4. Buscar retos
+        ch_resp = db.table("Challenge").select("*").in_("id", challenge_ids).execute()
+        challenges_map = {c["id"]: c for c in ch_resp.data}
+
+        results = []
+        for app in apps_resp.data:
+            app_job_id = app["job_id"]
+            sc = next((x for x in sc_resp.data if x["job_id"] == app_job_id), None)
+            if not sc:
+                continue
+            ch = challenges_map.get(sc["challenge_id"])
+            if not ch:
+                continue
+            
+            job_title = app.get("JobPost", {}).get("title", "Empleo")
+            recruiter_id = app.get("JobPost", {}).get("recruiter_id")
+            company_name = companies_map.get(recruiter_id, "Empresa Confidencial")
+            
+            results.append({
+                "application_id": app["id"],
+                "job_id": app_job_id,
+                "job_title": job_title,
+                "company_name": company_name,
+                "challenge": ch,
+                "sponsored_challenge": sc
+            })
+
+        return results
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("Error en get_company_challenges:", e)
+        raise HTTPException(status_code=500, detail=str(e))
