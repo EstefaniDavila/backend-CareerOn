@@ -87,6 +87,86 @@ def create_job_post(data: JobPostCreate, current_user: dict = Depends(get_curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.put("/jobs/{job_id}")
+def update_job_post(
+    job_id: int,
+    data: JobPostCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        db: Client = get_db()
+
+        user_resp = (db.table("Usuario").select("id, type").eq("email", current_user["email"]).execute())
+
+        if not user_resp.data or user_resp.data[0]["type"] != "Recruiter":
+            raise HTTPException(
+                status_code=403,
+                detail="Solo reclutadores pueden editar ofertas."
+            )
+
+        recruiter_id = user_resp.data[0]["id"]
+
+        job_resp = (
+            db.table("JobPost")
+            .select("id")
+            .eq("id", job_id)
+            .eq("recruiter_id", recruiter_id)
+            .execute()
+        )
+
+        if not job_resp.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Oferta no encontrada."
+            )
+
+        db.table("JobPost").update({
+            "title": data.title,
+            "description": data.description,
+            "location": data.location,
+            "job_type": data.job_type,
+            "salary_range": data.salary_range
+        }).eq("id", job_id).execute()
+
+        db.table("JobRequirement").delete().eq(
+            "job_id",
+            job_id
+        ).execute()
+
+        requirements = []
+
+        for i, skill_id in enumerate(data.skills_required):
+            req_level = (
+                data.required_levels[i]
+                if i < len(data.required_levels)
+                else "Intermedio"
+            )
+
+            requirements.append({
+                "job_id": job_id,
+                "skill_id": skill_id,
+                "required_level": req_level
+            })
+
+        if requirements:
+            db.table("JobRequirement").insert(
+                requirements
+            ).execute()
+
+        return {
+            "status": "success",
+            "message": "Oferta actualizada correctamente."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
 @router.get("/jobs")
 def list_my_jobs(current_user: dict = Depends(get_current_user)):
     """Lista los trabajos que este reclutador ha publicado, incluyendo habilidades, requisitos y cantidad de postulantes."""
