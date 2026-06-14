@@ -170,3 +170,125 @@ def optimize_cv_with_gemini(cv_text: str) -> dict:
                 "habilidades": ["Python", "React", "PostgreSQL", "FastAPI"]
             }
         }
+
+def process_interview_message(history: list, job_context: str = None, images_base64: list = None) -> str:
+    """
+    Envía el historial de la entrevista al modelo para que genere la siguiente pregunta o comentario.
+    Usa el contexto del trabajo si es una entrevista específica, o preguntas generales si no lo es.
+    Admite fotos (en base64) para evaluar el lenguaje corporal.
+    """
+    if not api_key:
+        return "¡Hola! Estoy simulando ser el reclutador (sin API Key). ¿Cómo te describirías en tres palabras?"
+
+    system_prompt = "Eres un reclutador técnico experto realizando una entrevista de trabajo a un candidato."
+    if job_context:
+        system_prompt += f"\n\nContexto de la oferta de trabajo:\n{job_context}\n\nHaz preguntas técnicas muy específicas sobre estos requisitos."
+    else:
+        system_prompt += "\n\nHaz preguntas generales de ingeniería de software, resolución de problemas y habilidades blandas."
+    
+    system_prompt += "\n\nREGLAS IMPORTANTES:"
+    system_prompt += "\n- Haz UNA sola pregunta a la vez."
+    system_prompt += "\n- NO uses formato Markdown (sin asteriscos **, ni negritas) porque tu respuesta será leída por un sintetizador de voz."
+    system_prompt += "\n- NO uses emojis en absoluto bajo ninguna circunstancia."
+    system_prompt += "\n- La entrevista consta de EXACTAMENTE 3 preguntas en total. Comienza la entrevista avisándole esto al usuario de forma muy breve. Al terminar la tercera pregunta y recibir su respuesta, despídete y dile que haga clic en 'Finalizar Entrevista'."
+    system_prompt += "\n- Evalúa la respuesta anterior brevemente."
+    system_prompt += "\n- Si te envían imágenes (fotogramas de su cámara), fíjate en su lenguaje corporal: si desvía la mirada, parece nervioso o distraído, menciónalo sutilmente como feedback en tu respuesta (ej. 'Noté que desviaste la mirada un momento al responder, recuerda mantener la confianza...'). Si se ve seguro, felicítalo por su contacto visual."
+    system_prompt += "\n- Mantén un tono profesional pero constructivo."
+
+    # Formatear el historial para Claude
+    claude_messages = []
+    for msg in history:
+        # history: [{'role': 'user' o 'model', 'content': 'texto', 'images': ['base64']}]
+        role = "assistant" if msg["role"] == "model" else "user"
+        content = []
+        
+        # Añadir texto
+        if msg.get("content"):
+            content.append({"type": "text", "text": msg["content"]})
+            
+        # Añadir imágenes si las hay (solo del usuario)
+        if role == "user" and msg.get("images"):
+            for img_b64 in msg["images"]:
+                # Asumimos JPEG para simplificar, se debe limpiar el prefijo en el frontend o aquí
+                clean_b64 = img_b64.split(",")[1] if "," in img_b64 else img_b64
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": clean_b64
+                    }
+                })
+                
+        # Claude API falla si pasamos listas de contenido vacío
+        if not content:
+            content.append({"type": "text", "text": "..."})
+
+        claude_messages.append({"role": role, "content": content})
+
+    # Anthropic API requiere al menos un mensaje del usuario para iniciar, y DEBE empezar con 'user'
+    if not claude_messages:
+        claude_messages.append({
+            "role": "user",
+            "content": "Hola, estoy listo para iniciar la entrevista. Por favor, hazme la primera pregunta."
+        })
+    elif claude_messages[0]["role"] == "assistant":
+        # Anthropic exige que el primer mensaje sea siempre 'user'
+        claude_messages.insert(0, {
+            "role": "user",
+            "content": "Hola, estoy listo para la entrevista."
+        })
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",  # Usar Sonnet que soporta Visión
+            system=system_prompt,
+            max_tokens=1024,
+            messages=claude_messages
+        )
+        return response.content[0].text
+    except Exception as e:
+        print(f"Error en process_interview_message: {e}")
+        return "Disculpa, tuve un problema técnico. ¿Podrías repetir tu última respuesta?"
+
+def evaluate_interview(history: list, job_context: str = None) -> dict:
+    """
+    Evalúa la entrevista completa y retorna un JSON con un score y feedback.
+    """
+    if not api_key:
+        return {
+            "score": 85,
+            "feedback": "¡Excelente entrevista! Mostraste mucha seguridad y conocimiento. (Mock)"
+        }
+        
+    system_prompt = "Eres un reclutador técnico que acaba de terminar una entrevista. Debes evaluar el desempeño general del candidato basándote en la transcripción de la entrevista y el feedback de lenguaje corporal."
+    if job_context:
+        system_prompt += f"\n\nContexto del trabajo: {job_context}"
+        
+    prompt = "Aquí está la transcripción completa de la entrevista:\n"
+    for msg in history:
+        role = "Reclutador" if msg["role"] == "model" else "Candidato"
+        prompt += f"{role}: {msg.get('content', '')}\n"
+        
+    prompt += "\nGenera una evaluación en formato JSON estrictamente con esta estructura:\n"
+    prompt += '{"score": <int 0-100>, "feedback": "<párrafo con tu evaluación y áreas de mejora>"}'
+    
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            system=system_prompt,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        texto = response.content[0].text.strip()
+        start = texto.find('{')
+        end = texto.rfind('}')
+        if start != -1 and end != -1:
+            texto = texto[start:end+1]
+        return json.loads(texto)
+    except Exception as e:
+        print(f"Error en evaluate_interview: {e}")
+        return {
+            "score": 75,
+            "feedback": "Tuviste un buen desempeño, pero hay margen de mejora en la claridad de tus respuestas."
+        }
