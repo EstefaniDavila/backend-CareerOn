@@ -16,6 +16,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 # Habilitar CORS para permitir que React (5173) y React Native se conecten
 app.add_middleware(
     CORSMiddleware,
@@ -24,6 +27,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Incluir los routers (rutas divididas por módulos)
 app.include_router(auth.router, prefix="/api/auth", tags=["Autenticación"])

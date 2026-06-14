@@ -97,7 +97,6 @@ def seed_database():
         else:
             recruiters_inserted.append(res.data[0]["id"])
 
-    # 4. Crear Ofertas de Trabajo (25 Job Posts)
     print("👉 Insertando Ofertas de Trabajo...")
     if recruiters_inserted:
         job_titles = [
@@ -107,13 +106,20 @@ def seed_database():
         ]
         
         jobs_inserted = []
+        locations = ["Lima, Perú (Híbrido)", "Remoto", "Bogotá, Colombia", "Ciudad de México", "Remoto (Latam)", "Santiago, Chile"]
+        job_types = ["Tiempo completo", "Media jornada", "Por contrato", "Prácticas"]
+        salaries = ["S/ 1,500 - S/ 2,500", "S/ 3,000 - S/ 5,000", "S/ 1,025 - S/ 1,200", "No especificado", "S/ 6,000 - S/ 8,000"]
+        
         for i in range(25):
             rec_id = random.choice(recruiters_inserted)
             title = random.choice(job_titles)
             job = {
                 "recruiter_id": rec_id, 
                 "title": f"{title} #{i+1}", 
-                "description": f"Buscamos talento para {title} con muchas ganas de crecer en nuestra empresa."
+                "description": f"Buscamos talento para {title} con muchas ganas de crecer en nuestra empresa. Requerimos experiencia comprobable y capacidad para trabajar en equipo.",
+                "location": random.choice(locations),
+                "job_type": random.choice(job_types),
+                "salary_range": random.choice(salaries)
             }
             res = supabase.table("JobPost").select("id").eq("title", job["title"]).execute()
             if not res.data:
@@ -125,7 +131,8 @@ def seed_database():
                     reqs = random.sample(skill_ids, random.randint(3, 5))
                     for r_id in reqs:
                         supabase.table("JobRequirement").insert({"job_id": job_id, "skill_id": r_id, "required_level": random.choice(["Básico", "Intermedio", "Avanzado"])}).execute()
-
+                
+               
     # 5. Crear Estudiantes Masivos (50 Estudiantes)
     print("👉 Insertando Estudiantes y sus Skills (50 Alumnos)...")
     for i in range(50):
@@ -158,14 +165,42 @@ def seed_database():
             title = f"{random.choice(challenge_verbs)} un proyecto básico con {s['name']}"
             res = supabase.table("Challenge").select("id").eq("title", title).execute()
             if not res.data:
-                supabase.table("Challenge").insert({
-                    "skill_id": s["id"], 
-                    "title": title, 
-                    "reward_coins": random.randint(20, 100), 
-                    "reward_xp": random.randint(50, 200)
-                }).execute()
+                try:
+                    supabase.table("Challenge").insert({
+                        "skill_id": s["id"], 
+                        "title": title, 
+                        "reward_coins": random.randint(20, 100), 
+                        "reward_xp": random.randint(50, 200)
+                    }).execute()
+                except Exception as e:
+                    pass
+                
+    # 7. Crear Postulaciones (Applications) para rellenar los contadores
+    print("👉 Creando postulaciones aleatorias...")
+    # Obtener todos los trabajos y estudiantes de la BD para asegurarnos de que existan
+    all_jobs_res = supabase.table("JobPost").select("id").execute()
+    all_students_res = supabase.table("Usuario").select("id").eq("type", "Student").execute()
+    
+    all_jobs = [j["id"] for j in all_jobs_res.data]
+    all_students = [s["id"] for s in all_students_res.data]
+    
+    if all_jobs and all_students:
+        for job_id in all_jobs:
+            # Seleccionar entre 2 y 15 estudiantes al azar para que postulen a este job
+            num_applicants = random.randint(2, 15)
+            applicants = random.sample(all_students, min(num_applicants, len(all_students)))
+            
+            for student_id in applicants:
+                try:
+                    supabase.table("Application").insert({
+                        "job_id": job_id,
+                        "student_id": student_id,
+                        "status": "Pendiente"
+                    }).execute()
+                except Exception:
+                    pass
 
-    print("✅ ¡Sembrado de datos completado con éxito! Tu base de datos ahora tiene vida.")
+    print("✅ Seed completado con éxito. ¡BD Lista!")
 
 if __name__ == "__main__":
     try:

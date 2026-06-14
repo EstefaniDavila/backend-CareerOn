@@ -117,18 +117,25 @@ def optimize_cv_with_gemini(cv_text: str) -> dict:
             ],
             "habilidades": ["<Habilidad 1>", "<Habilidad 2>"]
         }}
+        }}
     }}
+    
+    IMPORTANTE: Asegúrate de que tu respuesta sea JSON 100% válido. Escapa correctamente cualquier comilla doble (") dentro de los textos usando barra invertida (\\") y no olvides ninguna coma (,). No uses saltos de línea sin escapar dentro de los valores.
     """
     
     try:
         response = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[
                 {"role": "user", "content": prompt}
             ]
         )
-        texto = response.content[0].text.replace("```json", "").replace("```", "").strip()
+        texto = response.content[0].text.strip()
+        start = texto.find('{')
+        end = texto.rfind('}')
+        if start != -1 and end != -1:
+            texto = texto[start:end+1]
         return json.loads(texto)
     except Exception as e:
         print(f"Error con Claude CV Optimizer: {e}")

@@ -163,3 +163,70 @@ async def optimize_cv_upload(file: UploadFile = File(...), current_user: dict = 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/generate-cv-from-profile")
+async def generate_cv_from_profile(current_user: dict = Depends(get_current_user)):
+    """
+    Toma los datos del perfil del usuario y genera un CV optimizado directamente
+    sin necesidad de subir un PDF.
+    """
+    try:
+        db: Client = get_db()
+        
+        user_resp = db.table("Usuario").select("*").eq("email", current_user["email"]).execute()
+        if not user_resp.data:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        user_data = user_resp.data[0]
+        user_id = user_data["id"]
+        
+        exp_resp = db.table("Experience").select("*").eq("user_id", user_id).execute()
+        edu_resp = db.table("Education").select("*").eq("user_id", user_id).execute()
+        proj_resp = db.table("Project").select("*").eq("user_id", user_id).execute()
+        skills_resp = db.table("UserSkill").select("level, Skill(name)").eq("user_id", user_id).execute()
+        
+        # Construir texto plano simulando un CV
+        cv_text = f"Nombre: {user_data.get('first_name', '')} {user_data.get('last_name', '')}\\n"
+        cv_text += f"Email: {user_data.get('email', '')}\\n"
+        if user_data.get("phone"):
+            cv_text += f"Teléfono: {user_data.get('phone')}\\n"
+        if user_data.get("bio"):
+            cv_text += f"Perfil Profesional / Bio: {user_data.get('bio')}\\n\\n"
+            
+        cv_text += "EXPERIENCIA PROFESIONAL:\\n"
+        for exp in exp_resp.data:
+            cv_text += f"- Cargo: {exp.get('title')} en {exp.get('company')} ({exp.get('start_date', 'N/A')} a {exp.get('end_date', 'Presente')}).\\n"
+            if exp.get("achievements"):
+                cv_text += f"  Logros: {exp.get('achievements')}\\n"
+                
+        cv_text += "\\nEDUCACIÓN:\\n"
+        for edu in edu_resp.data:
+            cv_text += f"- Título: {edu.get('degree')} en {edu.get('institution')} ({edu.get('start_date', 'N/A')} a {edu.get('end_date', 'Presente')})\\n"
+            
+        cv_text += "\\nPROYECTOS DESTACADOS:\\n"
+        for proj in proj_resp.data:
+            cv_text += f"- {proj.get('title')}: {proj.get('description', '')}. Herramientas: {proj.get('technologies', '')}\\n"
+            
+        cv_text += "\\nHABILIDADES TÉCNICAS:\\n"
+        for sk in skills_resp.data:
+            try:
+                cv_text += f"- {sk['Skill']['name']} ({sk['level']})\\n"
+            except Exception:
+                pass
+                
+        if len(cv_text.strip()) < 100:
+            raise HTTPException(status_code=400, detail="Tu perfil está muy vacío. Por favor, completa tu experiencia y educación en tu Perfil antes de generar un CV.")
+            
+        # Enviamos el texto estructurado al modelo de IA
+        analysis = optimize_cv_with_gemini(cv_text)
+        
+        return {
+            "status": "success",
+            "message": "CV generado exitosamente a partir del perfil.",
+            "data": analysis
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando CV desde perfil: {str(e)}")
+
